@@ -3,11 +3,15 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
-import * as db from "./db";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY || "re_dummy");
+const FROM_EMAIL = "finance-planner@resend.dev"; // 測試用發件人，正式需替換網域
 
 // ============ Validation Schemas ============
 
 const LifeStageExpensesSchema = z.object({
+  email: z.string().email(),
   stage: z.enum(["1", "2", "3", "4", "5", "6"]),
   currentAge: z.number().int().positive(),
   stageAgeRange: z.string(),
@@ -34,6 +38,7 @@ const LifestyleExpenseItemSchema = z.object({
 });
 
 const LifestyleExpensesSchema = z.object({
+  email: z.string().email(),
   personType: z.enum(["self", "partner"]),
   lifestyles: z.object({
     frugal: z.object({
@@ -71,6 +76,7 @@ const LiabilityItemSchema = z.object({
 });
 
 const NetWorthTrackingSchema = z.object({
+  email: z.string().email(),
   recordDate: z.date(),
   assets: z.object({
     liquidCash: z.object({
@@ -122,117 +128,63 @@ const lifeStageRouter = router({
     .input(LifeStageExpensesSchema)
     .mutation(async ({ ctx, input }) => {
       const { monthlyTotal, yearlyTotal } = calculateLifeStageExpenses(input.expenses);
-      const requiredNetAsset = yearlyTotal * 10; // 假設 10 年規劃期
+      const requiredNetAsset = yearlyTotal * 10;
+      
+      const htmlBody = `
+        <h2>您的「人生六大階段」財務規劃備份</h2>
+        <p>階段：${input.stage}</p>
+        <p>年齡：${input.currentAge}</p>
+        <p>月總支出：${monthlyTotal}</p>
+        <p>年總支出：${yearlyTotal}</p>
+        <p>目標淨資產：${requiredNetAsset}</p>
+        <hr/>
+        <p>感謝您使用有錢又好命學院系統！</p>
+      `;
 
-      await db.createLifeStageExpense(ctx.user.id, {
-        ...input,
-        monthlyTotal,
-        yearlyTotal,
-        requiredNetAsset,
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: input.email,
+        subject: "【有錢又好命學院】您的人生六大階段財務規劃",
+        html: htmlBody,
       });
 
       return { success: true };
     }),
-
-  list: protectedProcedure
-    .input(z.object({
-      page: z.number().int().positive().default(1),
-      limit: z.number().int().positive().default(10),
-      stage: z.enum(["1", "2", "3", "4", "5", "6"]).optional(),
-    }))
-    .query(async ({ ctx, input }) => {
-      return await db.getLifeStageExpenses(ctx.user.id, input.page, input.limit);
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ ctx, input }) => {
-      return await db.getLifeStageExpenseById(ctx.user.id, input.id);
-    }),
-
-  update: protectedProcedure
-    .input(z.object({
-      id: z.number().int().positive(),
-      ...LifeStageExpensesSchema.partial().shape,
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const { id, ...updateData } = input;
-
-      if (updateData.expenses) {
-        const { monthlyTotal, yearlyTotal } = calculateLifeStageExpenses(updateData.expenses);
-        const requiredNetAsset = yearlyTotal * 10;
-        Object.assign(updateData, { monthlyTotal, yearlyTotal, requiredNetAsset });
-      }
-
-      await db.updateLifeStageExpense(ctx.user.id, id, updateData);
-      return { success: true };
-    }),
-
-  delete: protectedProcedure
-    .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ ctx, input }) => {
-      await db.deleteLifeStageExpense(ctx.user.id, input.id);
-      return { success: true };
-    }),
-
-  getLatest: protectedProcedure
-    .input(z.object({
-      stage: z.enum(["1", "2", "3", "4", "5", "6"]).optional(),
-    }))
-    .query(async ({ ctx, input }) => {
-      return await db.getLatestLifeStageExpense(ctx.user.id, input.stage);
-    }),
+  
+  // Dummy endpoints for UI compatibility
+  list: protectedProcedure.query(() => ({ data: [], total: 0 })),
+  getLatest: protectedProcedure.query(() => null),
 });
 
 const lifestyleRouter = router({
   create: protectedProcedure
     .input(LifestyleExpensesSchema)
     .mutation(async ({ ctx, input }) => {
-      await db.createLifestyleExpense(ctx.user.id, input);
+      const htmlBody = `
+        <h2>您的「五種生活型態」財務規劃備份</h2>
+        <p>對象：${input.personType === 'self' ? '自己' : '伴侶'}</p>
+        <ul>
+          <li>簡約型月支出：${input.lifestyles.frugal.monthlyTotal}</li>
+          <li>現況型月支出：${input.lifestyles.current.monthlyTotal}</li>
+          <li>安全型月支出：${input.lifestyles.safe.monthlyTotal}</li>
+          <li>舒適型月支出：${input.lifestyles.comfortable.monthlyTotal}</li>
+          <li>富裕型月支出：${input.lifestyles.wealthy.monthlyTotal}</li>
+        </ul>
+        <hr/>
+        <p>感謝您使用有錢又好命學院系統！</p>
+      `;
+
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: input.email,
+        subject: "【有錢又好命學院】您的生活型態財務規劃",
+        html: htmlBody,
+      });
       return { success: true };
     }),
-
-  list: protectedProcedure
-    .input(z.object({
-      page: z.number().int().positive().default(1),
-      limit: z.number().int().positive().default(10),
-      personType: z.enum(["self", "partner"]).optional(),
-    }))
-    .query(async ({ ctx, input }) => {
-      return await db.getLifestyleExpenses(ctx.user.id, input.page, input.limit, input.personType);
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ ctx, input }) => {
-      return await db.getLifestyleExpenseById(ctx.user.id, input.id);
-    }),
-
-  update: protectedProcedure
-    .input(z.object({
-      id: z.number().int().positive(),
-      ...LifestyleExpensesSchema.partial().shape,
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const { id, ...updateData } = input;
-      await db.updateLifestyleExpense(ctx.user.id, id, updateData);
-      return { success: true };
-    }),
-
-  delete: protectedProcedure
-    .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ ctx, input }) => {
-      await db.deleteLifestyleExpense(ctx.user.id, input.id);
-      return { success: true };
-    }),
-
-  getLatest: protectedProcedure
-    .input(z.object({
-      personType: z.enum(["self", "partner"]).optional(),
-    }))
-    .query(async ({ ctx, input }) => {
-      return await db.getLatestLifestyleExpense(ctx.user.id, input.personType);
-    }),
+  
+  list: protectedProcedure.query(() => ({ data: [], total: 0 })),
+  getLatest: protectedProcedure.query(() => null),
 });
 
 const netWorthRouter = router({
@@ -240,81 +192,36 @@ const netWorthRouter = router({
     .input(NetWorthTrackingSchema)
     .mutation(async ({ ctx, input }) => {
       const { totalAssets, totalLiabilities, netWorth } = calculateNetWorth(input.assets, input.liabilities);
+      
+      const htmlBody = `
+        <h2>您的「淨值追蹤」紀錄備份</h2>
+        <p>總資產：${totalAssets}</p>
+        <p>總負債：${totalLiabilities}</p>
+        <p><strong>淨值：${netWorth}</strong></p>
+        <hr/>
+        <p>感謝您使用有錢又好命學院系統！</p>
+      `;
 
-      await db.createNetWorthTracking(ctx.user.id, {
-        ...input,
-        totalAssets,
-        totalLiabilities,
-        netWorth,
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: input.email,
+        subject: "【有錢又好命學院】您的淨值追蹤紀錄",
+        html: htmlBody,
       });
-
       return { success: true };
     }),
-
-  list: protectedProcedure
-    .input(z.object({
-      page: z.number().int().positive().default(1),
-      limit: z.number().int().positive().default(10),
-    }))
-    .query(async ({ ctx, input }) => {
-      return await db.getNetWorthTrackings(ctx.user.id, input.page, input.limit);
-    }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ ctx, input }) => {
-      return await db.getNetWorthTrackingById(ctx.user.id, input.id);
-    }),
-
-  update: protectedProcedure
-    .input(z.object({
-      id: z.number().int().positive(),
-      ...NetWorthTrackingSchema.partial().shape,
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const { id, ...updateData } = input;
-
-      if (updateData.assets || updateData.liabilities) {
-        const assets = updateData.assets || {};
-        const liabilities = updateData.liabilities || {};
-        const { totalAssets, totalLiabilities, netWorth } = calculateNetWorth(assets, liabilities);
-        Object.assign(updateData, { totalAssets, totalLiabilities, netWorth });
-      }
-
-      await db.updateNetWorthTracking(ctx.user.id, id, updateData);
-      return { success: true };
-    }),
-
-  delete: protectedProcedure
-    .input(z.object({ id: z.number().int().positive() }))
-    .mutation(async ({ ctx, input }) => {
-      await db.deleteNetWorthTracking(ctx.user.id, input.id);
-      return { success: true };
-    }),
-
-  getLatest: protectedProcedure
-    .query(async ({ ctx }) => {
-      return await db.getLatestNetWorthTracking(ctx.user.id);
-    }),
+  
+  list: protectedProcedure.query(() => ({ data: [], total: 0 })),
+  getLatest: protectedProcedure.query(() => null),
 });
 
 const dashboardRouter = router({
   getSummary: protectedProcedure
     .query(async ({ ctx }) => {
-      const lifeStageLatest = await db.getLatestLifeStageExpense(ctx.user.id);
-      const lifestyleLatest = await db.getLatestLifestyleExpense(ctx.user.id);
-      const netWorthLatest = await db.getLatestNetWorthTracking(ctx.user.id);
-
       return {
-        lifeStage: {
-          latestRecord: lifeStageLatest,
-        },
-        lifestyle: {
-          latestRecord: lifestyleLatest,
-        },
-        netWorth: {
-          latestRecord: netWorthLatest,
-        },
+        lifeStage: { latestRecord: null },
+        lifestyle: { latestRecord: null },
+        netWorth: { latestRecord: null },
       };
     }),
 });

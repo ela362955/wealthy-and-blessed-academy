@@ -36,6 +36,7 @@ export default function LifeStageForm() {
   const { user, loading: authLoading } = useAuth();
   const [selectedStage, setSelectedStage] = useState<string>("1");
   const [formData, setFormData] = useState({
+    email: "",
     currentAge: "",
     stageAgeRange: "",
     lifeDescription: "",
@@ -55,8 +56,9 @@ export default function LifeStageForm() {
 
   const createMutation = trpc.lifeStage.create.useMutation({
     onSuccess: () => {
-      toast.success("記錄已儲存");
+      toast.success("已成功寄送至您的信箱！");
       setFormData({
+        email: "",
         currentAge: "",
         stageAgeRange: "",
         lifeDescription: "",
@@ -92,12 +94,13 @@ export default function LifeStageForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.currentAge || !formData.stageAgeRange) {
-      toast.error("請填寫必填欄位");
+    if (!formData.email || !formData.currentAge || !formData.stageAgeRange) {
+      toast.error("請填寫所有必填欄位（包含接收信箱）");
       return;
     }
 
     await createMutation.mutateAsync({
+      email: formData.email,
       stage: selectedStage as any,
       currentAge: parseInt(formData.currentAge),
       stageAgeRange: formData.stageAgeRange,
@@ -191,6 +194,17 @@ export default function LifeStageForm() {
                     placeholder="例：32-38"
                   />
                 </div>
+              </div>
+              <div>
+                <Label htmlFor="email" className="text-purple-600 font-bold">接收報表信箱（必填）</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="您的電子信箱"
+                  className="border-purple-300 focus:border-purple-500"
+                />
               </div>
               <div>
                 <Label htmlFor="lifeDescription">生活描述</Label>
@@ -291,7 +305,7 @@ export default function LifeStageForm() {
                   儲存中...
                 </>
               ) : (
-                "儲存記錄"
+                "發送規劃書至信箱"
               )}
             </Button>
             <Link href="/dashboard">
