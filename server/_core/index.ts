@@ -1,13 +1,19 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import { createHash, randomInt } from "crypto";
 import net from "net";
+import { Resend } from "resend";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
-import { createContext } from "./context";
+import { createContext, createEmailSessionToken } from "./context";
 import { serveStatic, setupVite } from "./vite";
+
+const emailCodes = new Map<string, { hash: string; expiresAt: number; attempts: number }>();
+const normalizeEmail = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase() : "";
+const validEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const hashCode = (email: string, code: string) => createHash("sha256").update(`${email}:${code}`).digest("hex");
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -35,7 +41,54 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
-  registerOAuthRoutes(app);
+  app.post("/api/auth/email/request", async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!validEmail(email) || !apiKey) {
+      res.status(apiKey ? 400 : 503).json({ error: "Unable to send verification code" });
+      return;
+    }
+    const code = randomInt(100000, 1000000).toString();
+    emailCodes.set(email, { hash: hashCode(email, code), expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 });
+    const resend = new Resend(apiKey);
+    const result = await resend.emails.send({
+      from: process.env.EMAIL_FROM || "有錢又好命學院 <onboarding@resend.dev>",
+      to: email,
+      subject: "【有錢又好命學院】登入驗證碼",
+      html: `<p>您的登入驗證碼是：</p><p style="font-size:32px;font-weight:bold;letter-spacing:6px">${code}</p><p>驗證碼將於 10 分鐘後失效。</p>`,
+    });
+    if (result.error) {
+      emailCodes.delete(email);
+      res.status(502).json({ error: "Email delivery failed" });
+      return;
+    }
+    res.json({ success: true });
+  });
+
+  app.post("/api/auth/email/verify", (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+    const record = emailCodes.get(email);
+    if (!record || record.expiresAt < Date.now() || record.attempts >= 5 || record.hash !== hashCode(email, code)) {
+      if (record) record.attempts += 1;
+      res.status(401).json({ error: "Invalid or expired verification code" });
+      return;
+    }
+    const secret = process.env.SESSION_SECRET;
+    if (!secret) {
+      res.status(503).json({ error: "Session service is not configured" });
+      return;
+    }
+    emailCodes.delete(email);
+    res.cookie("eps_session", createEmailSessionToken(email, secret), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+    res.json({ success: true });
+  });
   // tRPC API
   app.use(
     "/api/trpc",
