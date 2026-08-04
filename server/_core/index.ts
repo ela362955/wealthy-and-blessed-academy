@@ -9,6 +9,8 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext, createEmailSessionToken } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { registerMemberRoutes } from "../memberRoutes";
+import { importMembers, recordEvent } from "../memberStore";
 
 const emailCodes = new Map<string, { hash: string; expiresAt: number; attempts: number }>();
 const normalizeEmail = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -41,6 +43,7 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
+  registerMemberRoutes(app);
   app.post("/api/auth/email/request", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const apiKey = process.env.RESEND_API_KEY;
@@ -65,7 +68,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.post("/api/auth/email/verify", (req, res) => {
+  app.post("/api/auth/email/verify", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
     const record = emailCodes.get(email);
@@ -87,6 +90,8 @@ async function startServer() {
       maxAge: 30 * 24 * 60 * 60 * 1000,
       path: "/",
     });
+    await importMembers("direct", [{ email }]);
+    await recordEvent({ version: "1.0", type: "member.login", source: "direct", occurredAt: new Date().toISOString(), memberEmail: email, payload: {} });
     res.json({ success: true });
   });
   // tRPC API

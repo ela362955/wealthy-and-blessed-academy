@@ -5,7 +5,8 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
-import Dashboard from "./pages/Dashboard";
+import MemberCenter from "./pages/MemberCenter";
+import AdminDashboard from "./pages/AdminDashboard";
 import LifeStageForm from "./pages/LifeStageForm";
 import LifestyleForm from "./pages/LifestyleForm";
 import NetWorthForm from "./pages/NetWorthForm";
@@ -17,11 +18,12 @@ function Router() {
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/login"} component={Login} />
-      <Route path={"/dashboard"} component={Dashboard} />
+      <Route path={"/dashboard"} component={MemberCenter} />
+      <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/life-stage"} component={LifeStageForm} />
       <Route path={"/lifestyle"} component={LifestyleForm} />
       <Route path={"/net-worth"} component={NetWorthForm} />
-      <Route path={"/history"} component={Dashboard} /> {/* TODO: 改為 RecordHistory */}
+      <Route path={"/history"} component={MemberCenter} /> {/* TODO: 改為 RecordHistory */}
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

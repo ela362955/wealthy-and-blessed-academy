@@ -10,7 +10,7 @@ export function createEmailSessionToken(email: string, secret: string) {
   return `${payload}.${signature}`;
 }
 
-function getSessionEmail(cookieHeader: string | undefined) {
+export function getSessionEmail(cookieHeader: string | undefined) {
   const secret = process.env.SESSION_SECRET;
   const token = parse(cookieHeader ?? "").eps_session;
   if (!secret || !token) return null;
