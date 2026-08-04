@@ -9,12 +9,14 @@ import Dashboard from "./pages/Dashboard";
 import LifeStageForm from "./pages/LifeStageForm";
 import LifestyleForm from "./pages/LifestyleForm";
 import NetWorthForm from "./pages/NetWorthForm";
+import Login from "./pages/Login";
 // import RecordHistory from "./pages/RecordHistory"; // TODO: 實作記錄歷史頁面
 
 function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/login"} component={Login} />
       <Route path={"/dashboard"} component={Dashboard} />
       <Route path={"/life-stage"} component={LifeStageForm} />
       <Route path={"/lifestyle"} component={LifestyleForm} />
