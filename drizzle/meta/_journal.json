@@ -15,6 +15,13 @@
       "when": 1785238786513,
       "tag": "0001_fair_spacker_dave",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1785917975761,
+      "tag": "0002_luxuriant_toad_men",
+      "breakpoints": true
     }
   ]
 }
