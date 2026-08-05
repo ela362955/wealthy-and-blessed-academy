@@ -1,0 +1,7 @@
+.git
+.gitignore
+.manus-logs
+node_modules
+dist
+coverage
+*.log
