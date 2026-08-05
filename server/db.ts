@@ -1,6 +1,6 @@
 import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, lifeStageExpenses, lifestyleExpenses, netWorthTracking } from "../drizzle/schema";
+import { InsertUser, users, lifeStageExpenses, lifestyleExpenses, netWorthTracking, verificationCodes } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -88,6 +88,79 @@ export async function getUserByOpenId(openId: string) {
 
   return result.length > 0 ? result[0] : undefined;
 }
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function upsertUserByEmail(email: string): Promise<typeof users.$inferSelect> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  let user = await getUserByEmail(email);
+  if (!user) {
+    // Generate a random UUID for openId to satisfy schema uniqueness for now
+    const openId = crypto.randomUUID();
+    await db.insert(users).values({
+      openId,
+      email,
+      loginMethod: "email_otp",
+    });
+    user = await getUserByEmail(email);
+  } else {
+    // Update last signed in
+    await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, user.id));
+    user = await getUserByEmail(email);
+  }
+  return user!;
+}
+
+// ============ Verification Codes ============
+
+export async function createVerificationCode(email: string, code: string, expiresInMinutes = 15) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
+  
+  await db.insert(verificationCodes).values({
+    email,
+    code,
+    expiresAt,
+  });
+}
+
+export async function verifyAndConsumeCode(email: string, code: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.select().from(verificationCodes)
+    .where(and(
+      eq(verificationCodes.email, email),
+      eq(verificationCodes.code, code)
+    ))
+    .orderBy(desc(verificationCodes.createdAt))
+    .limit(1);
+
+  if (result.length === 0) return false;
+
+  const entry = result[0];
+  
+  // Clean up this code (consume it)
+  await db.delete(verificationCodes).where(eq(verificationCodes.id, entry.id));
+
+  // Check expiration
+  if (entry.expiresAt < new Date()) {
+    return false;
+  }
+
+  return true;
+}
+
 
 // ============ Life Stage Expenses ============
 

@@ -4,6 +4,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { Resend } from "resend";
+import { SignJWT } from "jose";
+import { createVerificationCode, verifyAndConsumeCode, upsertUserByEmail } from "./db";
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_dummy");
 const FROM_EMAIL = "finance-planner@resend.dev"; // 測試用發件人，正式需替換網域
@@ -230,6 +232,42 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    sendOtp: publicProcedure
+      .input(z.object({ email: z.string().email() }))
+      .mutation(async ({ input }) => {
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        await createVerificationCode(input.email, code);
+        
+        await resend.emails.send({
+          from: FROM_EMAIL,
+          to: input.email,
+          subject: "【有錢又好命學院】您的登入驗證碼",
+          html: `<p>您的登入驗證碼為：<strong>${code}</strong></p><p>請在 15 分鐘內輸入此驗證碼完成登入。</p>`,
+        });
+        
+        return { success: true };
+      }),
+    verifyOtp: publicProcedure
+      .input(z.object({ email: z.string().email(), code: z.string().length(6) }))
+      .mutation(async ({ ctx, input }) => {
+        const isValid = await verifyAndConsumeCode(input.email, input.code);
+        if (!isValid) {
+          throw new Error("無效的驗證碼或已過期");
+        }
+        
+        const user = await upsertUserByEmail(input.email);
+        
+        const jwtSecret = new TextEncoder().encode(process.env.JWT_SECRET || "default_unsafe_secret");
+        const token = await new SignJWT({ userId: user.id, email: user.email })
+          .setProtectedHeader({ alg: 'HS256' })
+          .setExpirationTime('30d')
+          .sign(jwtSecret);
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, cookieOptions);
+        
+        return { success: true, user };
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });

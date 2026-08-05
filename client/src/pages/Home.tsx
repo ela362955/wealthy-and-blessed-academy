@@ -1,16 +1,61 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { startLogin } from "@/const";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { Link } from "wouter";
+import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 export default function Home() {
   const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, refresh } = useAuth();
   const { data: summary, isLoading } = trpc.dashboard.getSummary.useQuery(undefined, {
     enabled: !!user,
   });
+
+  const [email, setEmail] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+
+  const sendOtpMutation = trpc.auth.sendOtp.useMutation({
+    onSuccess: () => {
+      setOtpSent(true);
+      toast.success("驗證碼已發送至您的信箱！");
+    },
+    onError: (err) => {
+      toast.error(err.message || "發送失敗，請稍後再試");
+    }
+  });
+
+  const verifyOtpMutation = trpc.auth.verifyOtp.useMutation({
+    onSuccess: () => {
+      toast.success("登入成功！");
+      refresh();
+    },
+    onError: (err) => {
+      toast.error(err.message || "驗證失敗，請檢查密碼是否正確");
+    }
+  });
+
+  const handleSendOtp = () => {
+    if (!email || !email.includes("@")) {
+      toast.error("請輸入有效的 Email");
+      return;
+    }
+    sendOtpMutation.mutate({ email });
+  };
+
+  const handleVerifyOtp = () => {
+    if (otpCode.length !== 6) {
+      toast.error("請輸入 6 位數驗證碼");
+      return;
+    }
+    verifyOtpMutation.mutate({ email, code: otpCode });
+  };
 
   if (authLoading || isLoading) {
     return (
@@ -23,17 +68,71 @@ export default function Home() {
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-6">
-        <div className="max-w-md w-full text-center">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-pink-400 to-orange-300 bg-clip-text text-transparent mb-4">
-            個人財務導航系統
-          </h1>
-          <p className="text-gray-600 mb-8 text-lg">
-            讓我們一起規劃您的財務未來，掌握人生每個階段的開支與資產
-          </p>
-          <Button size="lg" onClick={startLogin} className="w-full">
-            登入開始
-          </Button>
-        </div>
+        <Card className="max-w-md w-full border-2 border-pink-100 shadow-xl bg-white/80 backdrop-blur-sm">
+          <CardHeader className="text-center pb-2">
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-pink-500 to-orange-400 bg-clip-text text-transparent mb-2">
+              個人財務導航系統
+            </h1>
+            <p className="text-gray-500 text-sm">
+              讓我們一起規劃您的財務未來，掌握人生每個階段的開支與資產
+            </p>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {!otpSent ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Email 信箱</label>
+                  <Input 
+                    placeholder="請輸入您的 Email" 
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                <Button 
+                  size="lg" 
+                  onClick={handleSendOtp} 
+                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 border-0"
+                  disabled={sendOtpMutation.isPending}
+                >
+                  {sendOtpMutation.isPending ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
+                  發送登入驗證碼
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">6 位數驗證碼</label>
+                  <Input 
+                    placeholder="請輸入信件中的 6 位數密碼" 
+                    type="text"
+                    maxLength={6}
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-400">已發送至 {email}</p>
+                </div>
+                <Button 
+                  size="lg" 
+                  onClick={handleVerifyOtp} 
+                  className="w-full bg-gradient-to-r from-pink-500 to-orange-400 hover:from-pink-600 hover:to-orange-500 border-0"
+                  disabled={verifyOtpMutation.isPending}
+                >
+                  {verifyOtpMutation.isPending ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
+                  確認登入
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => setOtpSent(false)} 
+                  className="w-full text-gray-500 mt-2"
+                >
+                  重新輸入 Email
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     );
   }

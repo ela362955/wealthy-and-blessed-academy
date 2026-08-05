@@ -207,3 +207,19 @@ export const netWorthTracking = mysqlTable("netWorthTracking", {
 
 export type NetWorthTracking = typeof netWorthTracking.$inferSelect;
 export type InsertNetWorthTracking = typeof netWorthTracking.$inferInsert;
+
+/**
+ * 驗證碼記錄表
+ * 記錄使用者申請的 Email OTP 驗證碼
+ */
+export const verificationCodes = mysqlTable("verificationCodes", {
+  id: int("id").autoincrement().primaryKey(),
+  email: varchar("email", { length: 320 }).notNull(),
+  code: varchar("code", { length: 10 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type VerificationCode = typeof verificationCodes.$inferSelect;
+export type InsertVerificationCode = typeof verificationCodes.$inferInsert;
+
