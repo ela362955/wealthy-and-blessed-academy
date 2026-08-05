@@ -1,9 +1,11 @@
 import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, lifeStageExpenses, lifestyleExpenses, netWorthTracking, verificationCodes } from "../drizzle/schema";
+import { migrate } from "drizzle-orm/mysql2/migrator";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _migrated = false;
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -21,6 +23,20 @@ export async function getDb() {
       _db = null;
     }
   }
+
+  if (_db && !_migrated) {
+    try {
+      console.log("[Database] Running migrations...");
+      // In production (e.g. Zeabur), process.cwd() is /app, so ./drizzle points to the right place.
+      await migrate(_db, { migrationsFolder: "./drizzle" });
+      _migrated = true;
+      console.log("[Database] Migrations applied successfully");
+    } catch (error) {
+      console.error("[Database] Migration failed:", error);
+      // We don't crash here so that we can see the exact error logs in Zeabur without breaking the server startup entirely.
+    }
+  }
+
   return _db;
 }
 
