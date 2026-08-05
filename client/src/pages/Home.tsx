@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 export default function Home() {
-  const { user, loading: authLoading } = useAuth();
   const { user, loading: authLoading, refresh } = useAuth();
   const { data: summary, isLoading } = trpc.dashboard.getSummary.useQuery(undefined, {
     enabled: !!user,
