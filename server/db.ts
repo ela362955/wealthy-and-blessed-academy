@@ -1,11 +1,82 @@
 import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import { InsertUser, users, lifeStageExpenses, lifestyleExpenses, netWorthTracking, verificationCodes } from "../drizzle/schema";
-import { migrate } from "drizzle-orm/mysql2/migrator";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: mysql.Pool | null = null;
 let _migrated = false;
+
+async function ensureTables(pool: mysql.Pool) {
+  const sqls = [
+    `CREATE TABLE IF NOT EXISTS \`users\` (
+      \`id\` int NOT NULL AUTO_INCREMENT,
+      \`openId\` varchar(64) NOT NULL,
+      \`name\` text,
+      \`email\` varchar(320),
+      \`loginMethod\` varchar(64),
+      \`role\` enum('user','admin') NOT NULL DEFAULT 'user',
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`lastSignedIn\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`),
+      UNIQUE KEY \`openId\` (\`openId\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`,
+    `CREATE TABLE IF NOT EXISTS \`verificationCodes\` (
+      \`id\` int NOT NULL AUTO_INCREMENT,
+      \`email\` varchar(320) NOT NULL,
+      \`code\` varchar(10) NOT NULL,
+      \`expiresAt\` timestamp NOT NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`,
+    `CREATE TABLE IF NOT EXISTS \`lifeStageExpenses\` (
+      \`id\` int NOT NULL AUTO_INCREMENT,
+      \`userId\` int NOT NULL,
+      \`recordDate\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`stage\` enum('1','2','3','4','5','6') NOT NULL,
+      \`currentAge\` int NOT NULL,
+      \`stageAgeRange\` varchar(20),
+      \`lifeDescription\` text,
+      \`mindsetDescription\` text,
+      \`expenses\` json NOT NULL,
+      \`monthlyTotal\` decimal(12,2) NOT NULL,
+      \`yearlyTotal\` decimal(12,2) NOT NULL,
+      \`requiredNetAsset\` decimal(15,2) NOT NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`,
+    `CREATE TABLE IF NOT EXISTS \`lifestyleExpenses\` (
+      \`id\` int NOT NULL AUTO_INCREMENT,
+      \`userId\` int NOT NULL,
+      \`recordDate\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`personType\` enum('self','partner') NOT NULL,
+      \`lifestyles\` json NOT NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`,
+    `CREATE TABLE IF NOT EXISTS \`netWorthTracking\` (
+      \`id\` int NOT NULL AUTO_INCREMENT,
+      \`userId\` int NOT NULL,
+      \`recordDate\` timestamp NOT NULL,
+      \`assets\` json NOT NULL,
+      \`liabilities\` json NOT NULL,
+      \`totalAssets\` decimal(15,2) NOT NULL,
+      \`totalLiabilities\` decimal(15,2) NOT NULL,
+      \`netWorth\` decimal(15,2) NOT NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`,
+  ];
+  for (const sql of sqls) {
+    await pool.execute(sql);
+  }
+  console.log("[Database] All tables ensured.");
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -17,23 +88,21 @@ export async function getDb() {
 
   if (!_db && url) {
     try {
-      _db = drizzle(url);
+      _pool = mysql.createPool(url);
+      _db = drizzle(_pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
+      _pool = null;
     }
   }
 
-  if (_db && !_migrated) {
+  if (_pool && !_migrated) {
     try {
-      console.log("[Database] Running migrations...");
-      // In production (e.g. Zeabur), process.cwd() is /app, so ./drizzle points to the right place.
-      await migrate(_db, { migrationsFolder: "./drizzle" });
+      await ensureTables(_pool);
       _migrated = true;
-      console.log("[Database] Migrations applied successfully");
     } catch (error) {
-      console.error("[Database] Migration failed:", error);
-      // We don't crash here so that we can see the exact error logs in Zeabur without breaking the server startup entirely.
+      console.error("[Database] Failed to ensure tables:", error);
     }
   }
 
