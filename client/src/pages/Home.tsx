@@ -4,13 +4,23 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { Link } from "wouter";
-import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 export default function Home() {
+  // SSO: if Nexus OS embedded us with sso_email param, auto-login via server redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ssoEmail = params.get('sso_email');
+    const ssoSource = params.get('sso_source');
+    if (ssoEmail && ssoSource === 'nexus') {
+      // Redirect to SSO endpoint which sets cookie and redirects back to /
+      window.location.href = `/api/auth/sso?sso_email=${encodeURIComponent(ssoEmail)}&sso_source=nexus`;
+    }
+  }, []);
+
   const { user, loading: authLoading, refresh } = useAuth();
   const { data: summary, isLoading } = trpc.dashboard.getSummary.useQuery(undefined, {
     enabled: !!user,

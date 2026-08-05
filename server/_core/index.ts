@@ -44,6 +44,41 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerMemberRoutes(app);
+
+  // Allow embedding from Nexus OS (iframe)
+  app.use((req, res, next) => {
+    const origin = req.headers.origin || '';
+    if (origin.includes('nexus-os.uk') || origin.includes('nexus-os.zeabur.app') || origin.includes('localhost')) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'self' https://*.nexus-os.uk https://*.zeabur.app");
+    next();
+  });
+
+  // SSO endpoint: Nexus OS passes email, we auto-login without OTP
+  app.get("/api/auth/sso", async (req, res) => {
+    const email = normalizeEmail(req.query?.sso_email as string);
+    const source = req.query?.sso_source as string;
+    const secret = process.env.SESSION_SECRET;
+    if (!validEmail(email) || source !== 'nexus' || !secret) {
+      res.redirect('/');
+      return;
+    }
+    res.cookie("eps_session", createEmailSessionToken(email, secret), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "none",  // Required for cross-site iframe
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+    await importMembers("direct", [{ email }]);
+    await recordEvent({ version: "1.0", type: "member.login", source: "nexus_sso", occurredAt: new Date().toISOString(), memberEmail: email, payload: {} });
+    res.redirect('/');
+  });
+
+
   app.post("/api/auth/email/request", async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const apiKey = process.env.RESEND_API_KEY;
