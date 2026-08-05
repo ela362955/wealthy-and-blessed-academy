@@ -9,7 +9,8 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   let url = process.env.DATABASE_URL;
   if (!url && process.env.MYSQL_HOST) {
-    url = `mysql://${process.env.MYSQL_USER}:${process.env.MYSQL_PASSWORD}@${process.env.MYSQL_HOST}:${process.env.MYSQL_PORT}/${process.env.MYSQL_DATABASE}`;
+    const user = process.env.MYSQL_USERNAME || process.env.MYSQL_USER;
+    url = `mysql://${user}:${process.env.MYSQL_PASSWORD}@${process.env.MYSQL_HOST}:${process.env.MYSQL_PORT}/${process.env.MYSQL_DATABASE}`;
   }
 
   if (!_db && url) {

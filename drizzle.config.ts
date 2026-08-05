@@ -3,7 +3,8 @@ import { defineConfig } from "drizzle-kit";
 let connectionString = process.env.DATABASE_URL;
 
 if (!connectionString && process.env.MYSQL_HOST) {
-  connectionString = `mysql://${process.env.MYSQL_USER}:${process.env.MYSQL_PASSWORD}@${process.env.MYSQL_HOST}:${process.env.MYSQL_PORT}/${process.env.MYSQL_DATABASE}`;
+  const user = process.env.MYSQL_USERNAME || process.env.MYSQL_USER;
+  connectionString = `mysql://${user}:${process.env.MYSQL_PASSWORD}@${process.env.MYSQL_HOST}:${process.env.MYSQL_PORT}/${process.env.MYSQL_DATABASE}`;
 }
 
 if (!connectionString) {
